@@ -1,5 +1,9 @@
 # Day 11 — Controlled Agent Security (2026)
 
+- **Họ và tên:** Trần Thị Thu Hiền
+- **MSSV:** 2A202602737
+- **Repository:** `K4-L3-DAY11-TranThiThuHien-2A202602737-Guardrails-HITL-Responsible-AI`
+
 > 👤 **Hình thức:** bài tập **cá nhân** (1 người / 1 MSSV).  
 > 🎯 **Mục tiêu:** xây **Blue** (phòng thủ), rồi red-team **Red** + **Red Advance**.  
 > ✅ Làm theo **Checkpoint 1 → 5** trong [`CHECKPOINTS.md`](CHECKPOINTS.md) · nộp theo [`SUBMISSION.md`](SUBMISSION.md).
@@ -59,8 +63,7 @@
 
 Codelab lớp: xem `template-codelabs/codelab-day11-k4-l3a.md` (L3A) hoặc bản L3B tương ứng.
 
-**Repo nộp học viên:** `K4-L3-DAY11-<HoVaTen>-<MSSV>-Guardrails-HITL-Responsible-AI`  
-Ví dụ: `K4-L3-DAY11-NguyenVanA-2A2026xxxxx-Guardrails-HITL-Responsible-AI`
+**Repo nộp:** `K4-L3-DAY11-TranThiThuHien-2A202602737-Guardrails-HITL-Responsible-AI`
 
 ---
 
@@ -134,3 +137,38 @@ pip install -r requirements.txt
 Rồi mở [`CHECKPOINTS.md`](CHECKPOINTS.md) và làm lần lượt Checkpoint 1 → 5.
 
 Nộp theo [`SUBMISSION.md`](SUBMISSION.md) · Quy định: [`RULES.md`](RULES.md).
+
+---
+
+## Web demo (Streamlit)
+
+Sau khi cài dependency và sinh artifact ở Checkpoint 3–5, chạy web demo local:
+
+```powershell
+# Windows PowerShell — từ gốc repo
+.\.venv\Scripts\Activate.ps1
+streamlit run streamlit_app.py
+```
+
+Web được chia theo đúng phạm vi project:
+
+- **Tổng quan:** kiến trúc, checkpoint và trạng thái bằng chứng.
+- **Blue chatbot:** gọi OpenRouter thật bằng `create_blue_agent()` và production plugin stack.
+- **CP2 · Guardrails:** chạy trực tiếp injection, topic và output filter; đối chiếu toàn bộ dataset.
+- **CP3 · Pipeline:** mô phỏng rate limit, egress policy và đọc kết quả assignment suite.
+- **HITL · Security boundary:** thử approval, destination, payload và untrusted content.
+- **CP4 · Red team:** xem đủ 5 kỹ thuật trên Red và Red Advance.
+- **CP5 · Artifacts:** kiểm tra packaging, schema, test report và preview đã redact.
+
+Các trang CP3, CP4 và CP5 có nút chạy đúng luồng tạo bằng chứng của đề:
+
+- CP3 gọi assignment suite và sinh lại `results.json`, `audit_log.json`, `metrics.json`.
+- CP4 gọi Red + Red Advance thật rồi sinh các attack artifacts theo contract rubric.
+- CP5 gọi `scripts/grade.py`, chạy public tests và tự sinh report; không viết report tay.
+
+Blue vẫn khai báo model rubric `liquid/lfm-2.5-2.6b`; request live dùng endpoint OpenRouter
+của chính model đó là `liquid/lfm-2.5-2.6b:free` vì endpoint không hậu tố hiện trả 404.
+
+Chỉ trang Blue chatbot gọi LLM và chỉ sau khi người dùng bật consent. Những trang còn lại
+chạy local. Response và artifact đều được redact trước khi gửi tới trình duyệt. Lịch sử chat
+chỉ phục vụ trình bày; runner gốc vẫn xử lý từng lượt độc lập như implementation ban đầu.

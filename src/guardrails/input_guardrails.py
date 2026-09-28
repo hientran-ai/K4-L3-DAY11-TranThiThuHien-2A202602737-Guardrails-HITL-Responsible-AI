@@ -11,6 +11,7 @@ Status convention (không dùng True/False mơ hồ):
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Literal
 
 from google.genai import types
@@ -21,6 +22,60 @@ from core.config import ALLOWED_TOPICS, BLOCKED_TOPICS
 
 # Quyết định rõ ràng — tránh đảo nghĩa True/False
 InputStatus = Literal["ALLOW", "BLOCK"]
+
+_ZERO_WIDTH = "\u200b\u200c\u200d\ufeff\u2060"
+
+
+def _normalize_input(text: str) -> str:
+    """Return a canonical form suitable for deterministic policy checks."""
+    normalized = unicodedata.normalize("NFKC", text or "")
+    normalized = normalized.translate(str.maketrans("", "", _ZERO_WIDTH))
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def _strip_accents(text: str) -> str:
+    stripped = "".join(
+        char
+        for char in unicodedata.normalize("NFD", text)
+        if unicodedata.category(char) != "Mn"
+    )
+    # Vietnamese đ/Đ are separate letters, not base characters plus accents.
+    return stripped.replace("đ", "d").replace("Đ", "D")
+
+
+def _contains_topic(text: str, topic: str) -> bool:
+    pattern = r"(?<!\w)" + re.escape(topic).replace(r"\ ", r"\s+") + r"(?!\w)"
+    return re.search(pattern, text, re.IGNORECASE) is not None
+
+
+def _is_supported_meta_intent(text: str) -> bool:
+    """Allow greetings and questions about the VinBank assistant itself.
+
+    These intents are part of a normal banking-chatbot conversation even when
+    the user has not mentioned a concrete product yet. Blocked-topic checks run
+    first, so adding a harmful request after a greeting does not bypass policy.
+    """
+    capability_patterns = (
+        r"\bban\s+(?:la\s+(?:chatbot|tro\s*ly)[^?]{0,40})?(?:co\s+the\s+)?(?:lam|ho\s+tro|giup)\s+(?:duoc\s+)?(?:nhung\s+)?gi\b",
+        r"\b(?:chatbot|tro\s*ly)\s+(?:nay\s+)?(?:co\s+the\s+)?(?:lam|ho\s+tro|giup)\s+(?:duoc\s+)?(?:nhung\s+)?gi\b",
+        r"\btoi\s+co\s+the\s+hoi\s+(?:ban\s+)?(?:nhung\s+)?gi\b",
+        r"\bwhat\s+can\s+(?:you|this\s+(?:chatbot|assistant))\s+do\b",
+        r"\bhow\s+can\s+you\s+help\b",
+        r"\bwhat\s+(?:banking\s+)?services?\s+do\s+you\s+(?:support|provide)\b",
+    )
+    if any(re.search(pattern, text, re.IGNORECASE) for pattern in capability_patterns):
+        return True
+
+    # Greetings are allowed only when they are short, avoiding a broad bypass
+    # for an off-topic request that merely starts with "hello".
+    words = text.split()
+    greeting_patterns = (
+        r"^(?:xin\s+chao|chao|hello|hi|hey)(?:\s+(?:ban|vinbank|chatbot))?[!.?]*$",
+        r"^(?:good\s+(?:morning|afternoon|evening))[!.?]*$",
+    )
+    return len(words) <= 4 and any(
+        re.fullmatch(pattern, text, re.IGNORECASE) for pattern in greeting_patterns
+    )
 
 
 # ============================================================
@@ -51,14 +106,22 @@ def detect_injection(user_input: str) -> InputStatus:
     Returns:
         ``"BLOCK"`` if injection detected (chặn), ``"ALLOW"`` otherwise (cho qua).
     """
-    INJECTION_PATTERNS = [
-        # TODO: Add at least 5 regex patterns
-        # Example:
-        # r"ignore (all )?(previous|above) instructions",
-    ]
+    normalized = _normalize_input(user_input)
+    injection_patterns = (
+        r"\bignore\s+(?:all\s+)?(?:(?:previous|above|prior)\s+)?instructions?\b",
+        r"\b(?:disregard|forget)\s+(?:all\s+)?(?:previous\s+)?(?:instructions?|rules?|prompt)\b",
+        r"\byou\s+are\s+now\b",
+        r"\b(?:system|developer)\s+(?:prompt|instructions?)\b",
+        r"\breveal\s+(?:your\s+)?(?:instructions?|prompt|system\s+prompt)\b",
+        r"\bpretend\s+(?:you\s+are|to\s+be)\b",
+        r"\bact\s+as\s+(?:a\s+|an\s+)?(?:unrestricted|jailbroken|evil)\b",
+        r"\b(?:override|bypass)\s+(?:the\s+)?(?:system\s+)?(?:prompt|instructions?|rules?)\b",
+        r"\b(?:bỏ\s+qua|quên)\s+(?:mọi\s+)?(?:hướng\s+dẫn|chỉ\s+thị)\b",
+        r"\btiết\s+lộ\s+(?:system\s+prompt|hướng\s+dẫn\s+hệ\s+thống)\b",
+    )
 
-    for pattern in INJECTION_PATTERNS:
-        if re.search(pattern, user_input, re.IGNORECASE):
+    for pattern in injection_patterns:
+        if re.search(pattern, normalized, re.IGNORECASE):
             return "BLOCK"
     return "ALLOW"
 
@@ -84,14 +147,15 @@ def topic_filter(user_input: str) -> InputStatus:
         ``"BLOCK"`` = chặn (off-topic hoặc topic cấm).
         ``"ALLOW"`` = cho qua (câu banking hợp lệ).
     """
-    input_lower = user_input.lower()
+    input_lower = _strip_accents(_normalize_input(user_input)).casefold()
 
-    # TODO: Implement logic:
-    # 1. If input contains any blocked topic -> return "BLOCK"
-    # 2. If input doesn't contain any allowed topic -> return "BLOCK"
-    # 3. Otherwise -> return "ALLOW"
-
-    pass  # Replace with your implementation
+    if any(_contains_topic(input_lower, topic.casefold()) for topic in BLOCKED_TOPICS):
+        return "BLOCK"
+    if _is_supported_meta_intent(input_lower):
+        return "ALLOW"
+    if not any(_contains_topic(input_lower, topic.casefold()) for topic in ALLOWED_TOPICS):
+        return "BLOCK"
+    return "ALLOW"
 
 
 # ============================================================
@@ -144,14 +208,20 @@ class InputGuardrailPlugin(base_plugin.BasePlugin):
         self.total_count += 1
         text = self._extract_text(user_message)
 
-        # TODO: Implement logic:
-        # 1. Call detect_injection(text)
-        #    - If "BLOCK": increment blocked_count, return self._block_response("...")
-        # 2. Call topic_filter(text)
-        #    - If "BLOCK": increment blocked_count, return self._block_response("...")
-        # 3. If both return "ALLOW": return None (let message through)
+        if detect_injection(text) == "BLOCK":
+            self.blocked_count += 1
+            return self._block_response(
+                "Request blocked: prompt injection was detected. "
+                "Please ask a normal VinBank banking question."
+            )
 
-        pass  # Replace with your implementation
+        if topic_filter(text) == "BLOCK":
+            self.blocked_count += 1
+            return self._block_response(
+                "Request blocked: I can only help with VinBank banking topics."
+            )
+
+        return None
 
 
 # ============================================================

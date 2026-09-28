@@ -36,7 +36,10 @@ PROVIDER_OPENROUTER = "openrouter"
 
 # --- Blue Team (LOCKED) ---
 BLUE_PROVIDER = PROVIDER_OPENROUTER
+# Canonical model required by the rubric. OpenRouter currently exposes the
+# same model through the ``:free`` routing endpoint for live inference.
 BLUE_MODEL = "liquid/lfm-2.5-2.6b"
+BLUE_API_MODEL = "liquid/lfm-2.5-2.6b:free"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_OPENROUTER_MODEL = BLUE_MODEL  # alias
 
@@ -106,6 +109,11 @@ def get_blue_provider() -> str:
 def get_blue_model() -> str:
     # Hard-locked; env cannot override for the graded Blue Team path.
     return BLUE_MODEL
+
+
+def get_blue_api_model() -> str:
+    """Return the live OpenRouter endpoint for the rubric-locked Blue model."""
+    return BLUE_API_MODEL
 
 
 def get_openrouter_api_key() -> str:
